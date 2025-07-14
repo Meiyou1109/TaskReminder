@@ -51,9 +51,12 @@ class TaskService {
     GoogleAuthService().syncAllTasksToCalendar([task]);
   }
 
-  void removeTask(Task task) {
+  void removeTask(Task task) async {
     _tasks.remove(task);
     EventBusService.instance.fire(TaskRemovedEvent(task));
+    if (task.eventId != null) {
+      await GoogleAuthService().deleteTaskFromCalendar(task);
+    }
   }
 
   void toggleComplete(Task task) {
@@ -149,10 +152,11 @@ class TaskService {
     EventBusService.fire(ListAddedEvent(list));
   }
 
-  void removeList(String listId) {
+  Future<void> removeList(String listId) async {
     _lists.removeWhere((l) => l.id == listId);
     _tasks.removeWhere((t) => t.listId == listId);
-    FirebaseTaskService().deleteList(listId);
+    await FirebaseTaskService().deleteList(listId);
+    EventBusService.fire(ListRemovedEvent(listId));
   }
 
   void updateList(ListModel updatedList) {
@@ -175,29 +179,42 @@ class TaskService {
     EventBusService.fire(GroupAddedEvent(group));
   }
 
-  void removeGroup(String groupId) {
-    _groups.removeWhere((g) => g.id == groupId);
-    _lists.removeWhere((l) => l.groupId == groupId);
-    FirebaseTaskService().deleteGroup(groupId);
-  }
-
-  void ungroupGroup(String groupId) {
+  Future<void> deleteGroup(String groupId) async {
     final affectedLists = getListsByGroup(groupId).toList();
-    for (final list in affectedLists) {
-      _lists.remove(list);
-      final newList = ListModel(id: list.id, name: list.name, groupId: null);
-      _lists.add(newList);
-      FirebaseTaskService().saveList(newList);
+    
+    if (affectedLists.isNotEmpty) {
+      for (final list in affectedLists) {
+        _lists.remove(list);
+        final newList = ListModel(id: list.id, name: list.name, groupId: null);
+        _lists.add(newList);
+        await FirebaseTaskService().saveList(newList);
+        EventBusService.fire(ListUpdatedEvent(newList));
+      }
     }
-    removeGroup(groupId);
+    
+    // Xóa group
+    _groups.removeWhere((g) => g.id == groupId);
+    await FirebaseTaskService().deleteGroup(groupId);
+    
+    // Fire event để UI cập nhật
+    EventBusService.fire(GroupRemovedEvent(groupId));
   }
 
-  void renameGroup(String groupId, String newName) {
+  Future<void> removeGroup(String groupId) async {
+    await deleteGroup(groupId);
+  }
+
+  Future<void> ungroupGroup(String groupId) async {
+    await deleteGroup(groupId);
+  }
+
+  Future<void> renameGroup(String groupId, String newName) async {
     final index = _groups.indexWhere((g) => g.id == groupId);
     if (index != -1) {
       final renamed = Group(id: groupId, name: newName);
       _groups[index] = renamed;
-      FirebaseTaskService().saveGroup(renamed);
+      await FirebaseTaskService().saveGroup(renamed);
+      EventBusService.fire(GroupUpdatedEvent(renamed));
     }
   }
 

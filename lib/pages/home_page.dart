@@ -173,8 +173,11 @@ class _HomePageState extends State<HomePage> {
         break;
 
       case SortType.alphabet:
-        sorted.sort((a, b) =>
-            _normalize(a.title).compareTo(_normalize(b.title)));
+        sorted.sort((a, b) {
+          final normalizedA = _normalize(a.title);
+          final normalizedB = _normalize(b.title);
+          return normalizedA.compareTo(normalizedB);
+        });
         break;
 
       case SortType.dueDate:
@@ -435,9 +438,17 @@ void _handleTabChange(String tab) {
         ),
       ]);
     }
+
+    // Áp dụng sắp xếp riêng cho từng phần
+    final key = currentListId ?? currentTab;
+    final sortType = _sortTypes[key] ?? SortType.none;
+    final isAsc = _sortAsc[key] ?? true;
+
+    final sortedUncompleted = _applySort(uncompleted, sortType, isAsc);
+    final sortedCompleted = _applySort(completed, sortType, isAsc);
   
     final List<Widget> items = [
-      ...uncompleted.map((task) => TaskItem(
+      ...sortedUncompleted.map((task) => TaskItem(
             task: task,
             onToggleCompleted: () => _taskService.toggleComplete(task),
             onToggleImportant: () => _taskService.toggleImportant(task),
@@ -450,15 +461,15 @@ void _handleTabChange(String tab) {
               });
             },
           )),
-      if (completed.isNotEmpty)
+      if (sortedCompleted.isNotEmpty)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: Text(
-            'Đã hoàn thành (${completed.length})',
+            'Đã hoàn thành (${sortedCompleted.length})',
             style: const TextStyle(color: Color.fromARGB(255, 0, 0, 0), fontWeight: FontWeight.bold),
           ),
         ),
-      ...completed.map((task) => TaskItem(
+      ...sortedCompleted.map((task) => TaskItem(
             task: task,
             onToggleCompleted: () => _taskService.toggleComplete(task),
             onToggleImportant: () => _taskService.toggleImportant(task),
@@ -911,16 +922,16 @@ void _handleTabChange(String tab) {
                           ),
                         ),
                       ),
-                      if (isPlanned)
-                      const PopupMenuItem(
-                        value: PopupAction.connectGoogle,
-                        child: Text('Kết nối Google Calendar'),
-                      ),
-
+                      if (isPlanned) ...[
+                        const PopupMenuItem(
+                          value: PopupAction.connectGoogle,
+                          child: Text('Kết nối Google Calendar'),
+                        ),
                         const PopupMenuItem(
                           value: PopupAction.view,
                           child: Text('Lịch'),
                         ),
+                      ],
                     const PopupMenuItem(
                       value: PopupAction.theme,
                       child: Text('Chủ đề'),

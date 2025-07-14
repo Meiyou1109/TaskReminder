@@ -32,6 +32,16 @@ class GroupAddedEvent {
   const GroupAddedEvent(this.group);
 }
 
+class GroupRemovedEvent {
+  final String groupId;
+  const GroupRemovedEvent(this.groupId);
+}
+
+class GroupUpdatedEvent {
+  final Group group;
+  const GroupUpdatedEvent(this.group);
+}
+
 class ListAddedEvent {
   final ListModel list;
   const ListAddedEvent(this.list);
@@ -40,4 +50,9 @@ class ListAddedEvent {
 class ListUpdatedEvent {
   final ListModel list;
   const ListUpdatedEvent(this.list);
+}
+
+class ListRemovedEvent {
+  final String listId;
+  const ListRemovedEvent(this.listId);
 }

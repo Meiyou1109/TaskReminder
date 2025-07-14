@@ -43,8 +43,24 @@ class GoogleAuthService {
       _currentGoogleAccount = null;
     }
 
+    Logger('GoogleAuthService').info('Bắt đầu đăng nhập Google...');
+    
     final account = await _googleSignIn.signInSilently();
-    _currentGoogleAccount = account ?? await _googleSignIn.signIn();
+    if (account != null) {
+      Logger('GoogleAuthService').info('Đăng nhập silent thành công: ${account.email}');
+      _currentGoogleAccount = account;
+      return account;
+    }
+    
+    Logger('GoogleAuthService').info('Silent sign-in thất bại, thử đăng nhập thủ công...');
+    _currentGoogleAccount = await _googleSignIn.signIn();
+    
+    if (_currentGoogleAccount != null) {
+      Logger('GoogleAuthService').info('Đăng nhập thủ công thành công: ${_currentGoogleAccount!.email}');
+    } else {
+      Logger('GoogleAuthService').warning('Đăng nhập thủ công thất bại');
+    }
+    
     return _currentGoogleAccount;
   } catch (e) {
     Logger('GoogleAuthService').warning('Lỗi đăng nhập Google: $e');
@@ -52,32 +68,57 @@ class GoogleAuthService {
   }
 }
 
-
   Future<void> syncAllTasksToCalendar(List<Task> tasks) async {
     final calendarApi = await getCalendarApi();
     if (calendarApi == null) return;
 
     for (final task in tasks) {
-      if (task.dueDate == null || task.eventId != null) continue;
+      if (task.dueDate == null) continue;
 
       try {
         final event = calendar.Event()
           ..summary = task.title
-          ..description = task.note ?? ''
-          ..start = calendar.EventDateTime(
-            dateTime: task.dueDate,
-            timeZone: "Asia/Ho_Chi_Minh",
-          )
-          ..end = calendar.EventDateTime(
-            dateTime: task.dueDate!.add(Duration(hours: 1)),
+          ..description = task.note ?? '';
+
+        if (task.reminderTime != null) {
+          // Lấy ngày từ dueDate, giờ từ reminderTime
+          final start = DateTime(
+            task.dueDate!.year,
+            task.dueDate!.month,
+            task.dueDate!.day,
+            task.reminderTime!.hour,
+            task.reminderTime!.minute,
+          );
+          event.start = calendar.EventDateTime(
+            dateTime: start,
             timeZone: "Asia/Ho_Chi_Minh",
           );
+          event.end = calendar.EventDateTime(
+            dateTime: start.add(const Duration(hours: 1)),
+            timeZone: "Asia/Ho_Chi_Minh",
+          );
+        } else {
+          // All-day event: kéo dài từ 0:00 đến 23:59 cùng ngày
+          event.start = calendar.EventDateTime(
+            dateTime: DateTime(task.dueDate!.year, task.dueDate!.month, task.dueDate!.day, 0, 0),
+            timeZone: "Asia/Ho_Chi_Minh",
+          );
+          event.end = calendar.EventDateTime(
+            dateTime: DateTime(task.dueDate!.year, task.dueDate!.month, task.dueDate!.day, 23, 59),
+            timeZone: "Asia/Ho_Chi_Minh",
+          );
+        }
 
-        final insertedEvent = await calendarApi.events.insert(event, "primary");
-
-        if (insertedEvent.id != null) {
-          final updatedTask = task.copyWith(eventId: insertedEvent.id);
-          await FirebaseTaskService().syncUpdateTask(updatedTask);
+        if (task.eventId != null) {
+          // Nếu đã có eventId, update event trên Google Calendar
+          await calendarApi.events.update(event, "primary", task.eventId!);
+        } else {
+          // Nếu chưa có eventId, insert event mới
+          final insertedEvent = await calendarApi.events.insert(event, "primary");
+          if (insertedEvent.id != null) {
+            final updatedTask = task.copyWith(eventId: insertedEvent.id);
+            await FirebaseTaskService().syncUpdateTask(updatedTask);
+          }
         }
       } catch (e) {
         Logger('GoogleAuthService').warning('Lỗi sync task lên Calendar: $e');
@@ -85,23 +126,41 @@ class GoogleAuthService {
     }
   }
 
-  Future<calendar.CalendarApi?> getCalendarApi() async {
-    final account = _currentGoogleAccount ?? await _googleSignIn.signInSilently();
-    if (account == null) {
-      Logger('GoogleAuthService').warning(' getCalendarApi: account == null');
-      return null;
-    }
+  Future<void> deleteTaskFromCalendar(Task task) async {
+  if (task.eventId == null) return;
+  final calendarApi = await getCalendarApi();
+  if (calendarApi == null) return;
 
-    try {
-      final authHeaders = await account.authHeaders;
-      Logger('GoogleAuthService').info(' authHeaders retrieved, keys: ${authHeaders.keys}');
-      final client = GoogleAuthClient(authHeaders);
-      return calendar.CalendarApi(client);
-    } catch (e) {
-      Logger('GoogleAuthService').warning(' getCalendarApi error: $e');
-      return null;
-    }
+  try {
+    await calendarApi.events.delete("primary", task.eventId!);
+    Logger('GoogleAuthService').info('Đã xóa event trên Google Calendar: ${task.eventId}');
+  } catch (e) {
+    Logger('GoogleAuthService').warning('Lỗi xóa event trên Calendar: $e');
   }
+}
+
+  Future<calendar.CalendarApi?> getCalendarApi() async {
+  final account = _currentGoogleAccount ?? await _googleSignIn.signInSilently();
+  if (account == null) {
+    Logger('GoogleAuthService').warning('getCalendarApi: account == null');
+    return null;
+  }
+
+  try {
+    Logger('GoogleAuthService').info('Lấy auth headers cho account: ${account.email}');
+    final authHeaders = await account.authHeaders;
+    Logger('GoogleAuthService').info('Auth headers retrieved, keys: ${authHeaders.keys}');
+    
+    final client = GoogleAuthClient(authHeaders);
+    final calendarApi = calendar.CalendarApi(client);
+    
+    Logger('GoogleAuthService').info('Calendar API tạo thành công');
+    return calendarApi;
+  } catch (e) {
+    Logger('GoogleAuthService').warning('getCalendarApi error: $e');
+    return null;
+  }
+}
 }
 
 class GoogleAuthClient extends http.BaseClient {

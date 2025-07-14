@@ -1,0 +1,33 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.8.1'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Set up .env
+        run: echo "$ENV_FILE_CONTENT" > .env
+        env:
+          ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
+
+      - name: Generate google-services.json
+        run: bash scripts/replace_env.sh
+
+      - name: Build APK
+        run: flutter build apk

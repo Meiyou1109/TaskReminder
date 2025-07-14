@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'firebase_options.dart';
 import 'pages/login_page.dart';
@@ -15,14 +16,20 @@ import 'services/task_notification_handler.dart';
 import 'services/task_sync_handler.dart';
 import 'services/event_bus_service.dart';
 
+import 'dart:io';
 
-
-// Khởi tạo service
 final myTaskService = TaskService();
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  await _loadEnvIfExists();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  await Future.delayed(Duration(milliseconds: 50));
 
   await myTaskService.loadGroupsAndLists();
   await myTaskService.loadFromFirebase();
@@ -38,6 +45,18 @@ void main() async {
   runApp(const MyApp());
 }
 
+Future<void> _loadEnvIfExists() async {
+  final envFile = File('${Directory.current.path}/.env');
+  if (!envFile.existsSync()) return;
+
+  try {
+    final content = await envFile.readAsString();
+    dotenv.testLoad(fileInput: content);
+  } catch (_) {
+    // Ignore silently if file is unreadable
+  }
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -48,7 +67,9 @@ class MyApp extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const MaterialApp(
-            home: Scaffold(body: Center(child: CircularProgressIndicator())),
+            home: Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            ),
           );
         }
 
@@ -85,6 +106,8 @@ class MyApp extends StatelessWidget {
   }
 
   Future<bool> _checkEmailVerified() async {
+    await Future.delayed(Duration.zero);
+
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       await user.reload();

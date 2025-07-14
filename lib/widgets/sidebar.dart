@@ -329,12 +329,29 @@ class _SidebarState extends State<Sidebar> {
             style: const TextStyle(color: Colors.white),
             overflow: TextOverflow.ellipsis,
           ),
-          trailing: uncompletedCount > 0
-              ? Text(
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (uncompletedCount > 0)
+                Text(
                   '$uncompletedCount',
                   style: const TextStyle(color: Colors.white),
-                )
-              : null,
+                ),
+              const SizedBox(width: 8),
+              Builder(
+                builder: (context) => GestureDetector(
+                  onTap: () {
+                    final RenderBox renderBox = context.findRenderObject() as RenderBox;
+                    final position = renderBox.localToGlobal(Offset.zero);
+                    final size = renderBox.size;
+                    final menuPosition = Offset(position.dx + size.width - 20, position.dy - 8);
+                    _showListContextMenu(list, menuPosition);
+                  },
+                  child: const Icon(Icons.more_vert, color: Colors.white54, size: 20),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -373,10 +390,28 @@ class _SidebarState extends State<Sidebar> {
                 ),
               ],
             ),
-            Icon(
-              isExpanded ? Icons.expand_less : Icons.expand_more,
-              size: 18,
-              color: Colors.grey,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Builder(
+                  builder: (context) => GestureDetector(
+                    onTap: () {
+                      final RenderBox renderBox = context.findRenderObject() as RenderBox;
+                      final position = renderBox.localToGlobal(Offset.zero);
+                      final size = renderBox.size;
+                      final menuPosition = Offset(position.dx + size.width - 20, position.dy - 8);
+                      _showGroupContextMenu(group, menuPosition);
+                    },
+                    child: const Icon(Icons.more_vert, color: Colors.grey, size: 18),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  isExpanded ? Icons.expand_less : Icons.expand_more,
+                  size: 18,
+                  color: Colors.grey,
+                ),
+              ],
             ),
           ],
         ),
@@ -408,7 +443,7 @@ class _SidebarState extends State<Sidebar> {
     );
 
     if (!mounted || newName == null || newName.isEmpty) return;
-    widget.taskService.renameGroup(group.id, newName);
+    await widget.taskService.renameGroup(group.id, newName);
     setState(() {});
   }
 
@@ -439,17 +474,13 @@ class _SidebarState extends State<Sidebar> {
   }
 
   void _showGroupContextMenu(Group group, Offset position) async {
-    final hasChildList = widget.taskService.getListsByGroup(group.id).isNotEmpty;
     final selected = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
       items: [
         const PopupMenuItem(value: 'rename', child: Text('Đổi tên nhóm')),
         const PopupMenuItem(value: 'add_list', child: Text('Thêm danh sách')),
-        PopupMenuItem(
-          value: 'delete_or_unlink',
-          child: Text(hasChildList ? 'Huỷ nhóm' : 'Xoá nhóm'),
-        ),
+        const PopupMenuItem(value: 'delete', child: Text('Xoá nhóm')),
       ],
     );
 
@@ -464,12 +495,27 @@ class _SidebarState extends State<Sidebar> {
         setState(() {});
         refreshScrollState();
         break;
-      case 'delete_or_unlink':
-        if (hasChildList) {
-          widget.taskService.ungroupGroup(group.id);
-        } else {
-          widget.taskService.removeGroup(group.id);
-        }
+      case 'delete':
+        final hasChildList = widget.taskService.getListsByGroup(group.id).isNotEmpty;
+        final confirmMessage = hasChildList 
+          ? 'Nhóm này có danh sách bên trong. Danh sách sẽ được chuyển ra ngoài. Bạn có chắc chắn muốn xoá nhóm không?'
+          : 'Bạn có chắc chắn muốn xoá nhóm này không?';
+          
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Xoá nhóm'),
+            content: Text(confirmMessage),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Xoá')),
+            ],
+          ),
+        );
+
+        if (!mounted || confirm != true) return;
+
+        await widget.taskService.deleteGroup(group.id);
         setState(() {});
         refreshScrollState();
         break;
@@ -552,7 +598,7 @@ class _SidebarState extends State<Sidebar> {
 
         if (!mounted || confirm != true) return;
 
-        widget.taskService.removeList(list.id);
+        await widget.taskService.removeList(list.id);
         widget.onTabSelected("Today");
         setState(() {});
         refreshScrollState();
@@ -579,10 +625,12 @@ class _SidebarState extends State<Sidebar> {
     setState(() {});
   }
 
-Future<TimeOfDay?> _getSavedDueTime() async {
+  Future<TimeOfDay?> _getSavedDueTime() async {
   final prefs = await SharedPreferences.getInstance();
   if (!prefs.containsKey('due_hour') || !prefs.containsKey('due_minute')) return null;
   return TimeOfDay(hour: prefs.getInt('due_hour')!, minute: prefs.getInt('due_minute')!);
 }
+
+
 
 }
